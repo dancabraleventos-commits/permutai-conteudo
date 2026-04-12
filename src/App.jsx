@@ -265,7 +265,7 @@ function parseContent(raw) {
 export default function App() {
   const [theme, setTheme] = useState(THEMES[0]);
   const [format, setFormat] = useState(FORMATS[0]);
-  const [imageTool, setImageTool] = useState("midjourney");
+  const [imageTool, setImageTool] = useState("ideogram");
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
