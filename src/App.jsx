@@ -72,63 +72,89 @@ function ContentBlock({ label, content, accent }) {
   );
 }
 
-function ImagePromptBlock({ visualDescription, theme, format, imageTool }) {
-  const [imgPrompt, setImgPrompt] = useState(null);
+function ImagePromptBlock({ visualDescription, slidesContent, theme, format, imageTool }) {
+  const [prompts, setPrompts] = useState(null); // array de {label, prompt}
   const [loading, setLoading] = useState(false);
 
+  const isMultiSlide = format.includes("Carrossel") || format.includes("Stories");
+
   const toolInstructions = {
-    midjourney: "Escreva o prompt em inglês otimizado para Midjourney. Termine com os parâmetros: --ar 1:1 --style raw --v 6.1. Seja descritivo sobre composição, iluminação e estilo visual.",
-    dalle: "Escreva o prompt em inglês detalhado para DALL-E 3. Descreva cena, estilo artístico, iluminação, composição e paleta de cores. Tom claro e descritivo.",
-    ideogram: "Escreva o prompt em inglês para Ideogram. Inclua qualquer texto que deva aparecer NA imagem entre aspas duplas. Ideogram é excelente para imagens com texto incorporado.",
+    midjourney: "Escreva o prompt em inglês otimizado para Midjourney. Termine com: --ar 1:1 --style raw --v 6.1",
+    dalle: "Escreva o prompt em inglês detalhado para DALL-E 3. Descreva cena, estilo, iluminação e paleta.",
+    ideogram: "Escreva o prompt em inglês para Ideogram. Coloque qualquer texto que deve aparecer NA imagem entre aspas duplas. Ideogram é excelente para texto incorporado em imagens.",
   };
+
+  const buildPrompt = (slideLabel, slideContent) => `Você é especialista em criar prompts de imagem para IA generativa.
+
+Marca: Permutaí (plataforma de IA para permuta de imóveis)
+Público: corretores e imobiliárias brasileiras
+Tipo: ${theme} | Formato: ${format}
+${slideLabel ? `Slide: ${slideLabel}` : ""}
+Conteúdo do slide: ${slideContent || visualDescription}
+Ferramenta: ${imageTool}
+
+Diretrizes visuais Permutaí:
+- Paleta: roxo #6C63FF + verde #00C49A + fundo escuro #0A0D14
+- Estilo: tech moderno, sofisticado, NÃO genérico
+- Transmite: IA, mercado imobiliário, confiança, inovação
+- Proporção Instagram 1:1
+
+${toolInstructions[imageTool]}
+
+Retorne APENAS o prompt. Sem introdução, sem markdown.`;
 
   const generate = async () => {
     if (!visualDescription) return;
     setLoading(true);
-    setImgPrompt(null);
-
-    const prompt = `Você é especialista em criar prompts de imagem para IA generativa.
-
-Contexto:
-- Marca: Permutaí (plataforma de IA para permuta de imóveis)
-- Público: corretores e imobiliárias brasileiras
-- Tipo de post: ${theme}
-- Formato: ${format}
-- Descrição visual fornecida: ${visualDescription}
-- Ferramenta alvo: ${imageTool}
-
-Crie um prompt de imagem profissional para gerar a arte deste post de Instagram.
-
-Diretrizes visuais da marca Permutaí:
-- Paleta: roxo profundo #6C63FF + verde água #00C49A + fundo escuro #0A0D14
-- Estilo: tech moderno, limpo, sofisticado — NÃO genérico
-- Deve transmitir: inteligência artificial, mercado imobiliário, confiança, inovação
-- Adequado para Instagram (proporção 1:1 ou 4:5)
-
-${toolInstructions[imageTool]}
-
-Retorne APENAS o prompt. Sem introdução, sem explicação, sem markdown.`;
+    setPrompts(null);
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-      const data = await response.json();
-      const text = data.content?.map(b => b.text || "").join("") || "";
-      setImgPrompt(text.trim());
+      // Para carrossel/stories: gerar um prompt por slide
+      if (isMultiSlide && slidesContent && slidesContent.length > 0) {
+        const results = [];
+        for (let i = 0; i < slidesContent.length; i++) {
+          const slide = slidesContent[i];
+          const response = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              messages: [{ role: "user", content: buildPrompt(`Slide ${i + 1}`, slide) }],
+            }),
+          });
+          const data = await response.json();
+          const text = data.content?.map(b => b.text || "").join("") || "";
+          results.push({ label: `Slide ${i + 1}`, prompt: text.trim() });
+        }
+        setPrompts(results);
+      } else {
+        // Post único
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            messages: [{ role: "user", content: buildPrompt(null, visualDescription) }],
+          }),
+        });
+        const data = await response.json();
+        const text = data.content?.map(b => b.text || "").join("") || "";
+        setPrompts([{ label: null, prompt: text.trim() }]);
+      }
     } catch {
-      setImgPrompt("Erro ao gerar prompt. Tente novamente.");
+      setPrompts([{ label: null, prompt: "Erro ao gerar prompt. Tente novamente." }]);
     } finally {
       setLoading(false);
     }
@@ -154,7 +180,7 @@ Retorne APENAS o prompt. Sem introdução, sem explicação, sem markdown.`;
             🎨 Prompt de Imagem · {imageTool.charAt(0).toUpperCase() + imageTool.slice(1)}
           </div>
           <div style={{ fontSize: "11px", color: "#475569", marginTop: "3px" }}>
-            Gerado com base na sugestão visual acima
+            {isMultiSlide ? "Um prompt por slide — gere cada imagem separadamente no Ideogram" : "Gerado com base na sugestão visual acima"}
           </div>
         </div>
         <button onClick={generate} disabled={loading} style={{
@@ -175,53 +201,51 @@ Retorne APENAS o prompt. Sem introdução, sem explicação, sem markdown.`;
               }} />
               Gerando...
             </>
-          ) : "✨ Gerar prompt"}
+          ) : `✨ Gerar ${isMultiSlide ? "prompts por slide" : "prompt"}`}
         </button>
       </div>
 
-      {!imgPrompt && !loading && (
-        <div style={{
-          fontSize: "12px", color: "#334155", fontStyle: "italic",
-          padding: "10px 0",
-        }}>
-          Clique em "Gerar prompt" → copie → cole no {imageTool.charAt(0).toUpperCase() + imageTool.slice(1)} → gere a arte
+      {!prompts && !loading && (
+        <div style={{ fontSize: "12px", color: "#334155", fontStyle: "italic", padding: "10px 0" }}>
+          {isMultiSlide
+            ? `Gera um prompt por slide — cole cada um no ${imageTool.charAt(0).toUpperCase() + imageTool.slice(1)}`
+            : `Clique em "Gerar prompt" → copie → cole no ${imageTool.charAt(0).toUpperCase() + imageTool.slice(1)} → gere a arte`}
         </div>
       )}
 
-      {imgPrompt && (
+      {prompts && (
         <div>
-          <div style={{
-            background: "rgba(0,0,0,0.35)",
-            border: "1px solid rgba(108,99,255,0.2)",
-            borderRadius: "8px",
-            padding: "14px",
-            marginBottom: "12px",
-          }}>
-            <pre style={{
-              margin: 0, whiteSpace: "pre-wrap",
-              fontFamily: "'DM Mono', 'Fira Code', monospace",
-              fontSize: "12px", color: "#CBD5E1", lineHeight: "1.75",
-            }}>{imgPrompt}</pre>
-          </div>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-            <CopyButton text={imgPrompt} small />
-            <a
-              href={toolLinks[imageTool]}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontSize: "11px", color: "#6C63FF",
-                textDecoration: "none",
-                background: "rgba(108,99,255,0.1)",
-                border: "1px solid rgba(108,99,255,0.3)",
-                padding: "4px 10px", borderRadius: "6px",
-              }}
-            >
-              Abrir {imageTool.charAt(0).toUpperCase() + imageTool.slice(1)} →
-            </a>
-            <span style={{ fontSize: "11px", color: "#334155" }}>
-              Cole o prompt → gere → baixe → poste no Instagram
-            </span>
+          {prompts.map((item, idx) => (
+            <div key={idx} style={{ marginBottom: "16px" }}>
+              {item.label && (
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "#6C63FF", marginBottom: "6px" }}>
+                  📐 {item.label}
+                </div>
+              )}
+              <div style={{
+                background: "rgba(0,0,0,0.35)", border: "1px solid rgba(108,99,255,0.2)",
+                borderRadius: "8px", padding: "12px", marginBottom: "8px",
+              }}>
+                <pre style={{
+                  margin: 0, whiteSpace: "pre-wrap",
+                  fontFamily: "'DM Mono', 'Fira Code', monospace",
+                  fontSize: "12px", color: "#CBD5E1", lineHeight: "1.75",
+                }}>{item.prompt}</pre>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <CopyButton text={item.prompt} small />
+                <a href={toolLinks[imageTool]} target="_blank" rel="noopener noreferrer" style={{
+                  fontSize: "11px", color: "#6C63FF", textDecoration: "none",
+                  background: "rgba(108,99,255,0.1)", border: "1px solid rgba(108,99,255,0.3)",
+                  padding: "4px 10px", borderRadius: "6px",
+                }}>
+                  Abrir {imageTool.charAt(0).toUpperCase() + imageTool.slice(1)} →
+                </a>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: "11px", color: "#334155", marginTop: "4px" }}>
+            {isMultiSlide ? "Cole cada prompt separadamente → gere → monte o carrossel" : "Cole o prompt → gere → baixe → poste"}
           </div>
         </div>
       )}
@@ -625,6 +649,7 @@ Seja criativo, específico para o mercado imobiliário brasileiro. Evite clichê
               {/* Image prompt generator — always shown after visual */}
               <ImagePromptBlock
                 visualDescription={result.parsed.visual || result.raw.slice(0, 300)}
+                slidesContent={result.parsed.slides ? result.parsed.slides.split('\n').filter(l => l.trim().startsWith('Slide') || l.trim().match(/^\d+\./) || l.trim().match(/^\*\*Slide/)).map(l => l.replace(/\*\*/g,'').trim()) : []}
                 theme={result.theme}
                 format={result.format}
                 imageTool={result.imageTool}
